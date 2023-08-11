@@ -2,7 +2,14 @@
 
 A Rust program to resolve IP lists to their DNS PTR
 
-It uses the `1.1.1.1:53` DNS server. And 50 threads.
+It uses the following TCP DNS servers in a round-robin mode:
+
+- "1.1.1.1:53"
+- "1.0.0.1:53"
+- "8.8.8.8:53"
+- "8.8.4.4:53"
+
+And 30 threads.
 
 ## Example input
 

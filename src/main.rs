@@ -1,5 +1,5 @@
 use trust_dns_client::client::{ Client, SyncClient };
-use trust_dns_client::udp::UdpClientConnection;
+use trust_dns_client::tcp::TcpClientConnection;
 use std::str::FromStr;
 use std::net::IpAddr;
 use trust_dns_client::op::DnsResponse;
@@ -9,34 +9,109 @@ use rayon::prelude::*;
 use std::fs::read_to_string;
 use std::env;
 use std::process;
+use std::net::SocketAddr;
+use weighted_rs::{ RoundrobinWeight, Weight };
+use std::time::Duration;
+use std::thread;
 
-fn get_ptr(conn: UdpClientConnection, addr: IpAddr) {
+struct PtrResult {
+    query_addr: IpAddr,
+    query: Name,
+    result: Option<Name>,
+    error: Option<String>,
+}
+
+#[derive(Copy, Clone)]
+struct IpToResolve {
+    address: IpAddr,
+    server: SocketAddr,
+}
+
+fn get_ptr(to_resolve: IpToResolve) -> PtrResult {
+    let conn = match TcpClientConnection::with_timeout(to_resolve.server, Duration::new(5, 0)) {
+        Ok(conn) => conn,
+        Err(err) => {
+            eprintln!("Something went wrong with the UDP client connection: {}", err);
+            process::exit(1);
+        }
+    };
     let client = SyncClient::new(conn);
     // Specify the name, note the final '.' which specifies it's an FQDN
-    let name = Name::from_str(&reverse(addr)).unwrap();
+    let name = match Name::from_str(&reverse(to_resolve.address)) {
+        Ok(name) => name,
+        Err(err) => {
+            eprintln!(
+                "Something went wrong while building the name ({}): {}",
+                reverse(to_resolve.address),
+                err
+            );
+            process::exit(1);
+        }
+    };
 
-    let response: DnsResponse = client.query(&name, DNSClass::IN, RecordType::PTR).unwrap();
+    let response: DnsResponse = match client.query(&name, DNSClass::IN, RecordType::PTR) {
+        Ok(res) => res,
+        Err(err) => {
+            let two_hundred_millis = Duration::from_millis(400);
+            thread::sleep(two_hundred_millis);
+            eprintln!("Query error for ({}) from ({}): {}", name, to_resolve.server, err);
+            return PtrResult {
+                query_addr: to_resolve.address,
+                query: name,
+                result: None,
+                error: Some(err.to_string()),
+            };
+        }
+    };
+
     let answers: &[Record] = response.answers();
 
     if answers.len() == 0 {
-        println!("{}", addr);
-        return;
+        return PtrResult {
+            query_addr: to_resolve.address,
+            query: name,
+            result: None,
+            error: None,
+        };
     }
 
     if let Some(RData::PTR(ref res)) = answers[0].data() {
-        println!("{} # {}", addr, res);
+        return PtrResult {
+            query_addr: to_resolve.address,
+            query: name,
+            result: Some(res.clone()),
+            error: None,
+        };
     } else {
-        assert!(false, "unexpected result")
+        assert!(false, "unexpected result");
+        process::exit(1);
     }
 }
 
-fn resolve_file(filename: &str, dns_server: &str) {
+fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
+    let mut rr: RoundrobinWeight<SocketAddr> = RoundrobinWeight::new();
+    for dns_server in dns_servers {
+        let address = match dns_server.parse() {
+            Ok(addr) => addr,
+            Err(err) => {
+                eprintln!("Something went wrong while parsing the DNS server address: {}", err);
+                process::exit(1);
+            }
+        };
+
+        rr.add(address, 1);
+    }
+
     let mut ips = vec![];
     match read_to_string(filename) {
         Ok(file) => {
             for line in file.lines() {
                 match IpAddr::from_str(line) {
-                    Ok(addr) => ips.push(addr),
+                    Ok(addr) =>
+                        ips.push(IpToResolve {
+                            address: addr,
+                            server: rr.next().unwrap(),
+                        }),
                     Err(err) => {
                         eprintln!("Something went wrong while parsing the IP ({}): {}", line, err);
                         process::exit(1);
@@ -49,20 +124,21 @@ fn resolve_file(filename: &str, dns_server: &str) {
             process::exit(1);
         }
     }
-    rayon::ThreadPoolBuilder::new().num_threads(50).build_global().unwrap();
-    let address = dns_server.parse().unwrap();
-    let conn = match UdpClientConnection::new(address) {
-        Ok(conn) => conn,
+    match rayon::ThreadPoolBuilder::new().num_threads(30).build_global() {
+        Ok(r) => r,
         Err(err) => {
-            eprintln!("Something went wrong with the UDP client connection: {}", err);
+            eprintln!("Something went wrong while building the thread pool: {}", err);
             process::exit(1);
         }
-    };
+    }
 
     ips.into_par_iter()
         .enumerate()
-        .for_each(|(_i, addr)| {
-            get_ptr(conn, addr);
+        .for_each(|(_i, to_resolve)| {
+            match get_ptr(to_resolve).result {
+                Some(res) => println!("{} # {}", to_resolve.address, res),
+                None => println!("{}", to_resolve.address),
+            };
         });
 }
 
@@ -72,7 +148,7 @@ fn main() {
         eprintln!("Use: dns-ptr-resolver ./ips.txt");
         process::exit(1);
     }
-    resolve_file(&args[1], "1.1.1.1:53")
+    resolve_file(&args[1], vec!["1.1.1.1:53", "1.0.0.1:53", "8.8.8.8:53", "8.8.4.4:53"])
 }
 
 #[cfg(test)]
@@ -86,6 +162,6 @@ mod test {
 
     #[test]
     fn test_resolve_file() {
-        resolve_file("./example/ips-to-resolve.txt", "1.1.1.1:53");
+        resolve_file("./example/ips-to-resolve.txt", vec!["1.1.1.1:53"]);
     }
 }
