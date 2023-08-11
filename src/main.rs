@@ -69,7 +69,7 @@ fn resolve_file(filename: &str, dns_server: &str) {
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Use: ptr-resolver ./ips.txt");
+        eprintln!("Use: dns-ptr-resolver ./ips.txt");
         process::exit(1);
     }
     resolve_file(&args[1], "1.1.1.1:53")
