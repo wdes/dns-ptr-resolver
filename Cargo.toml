@@ -17,6 +17,10 @@ include = [
     "/LICENSE",
 ]
 
+[[bin]]
+name = "dns-ptr-resolver"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
