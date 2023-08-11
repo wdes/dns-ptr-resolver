@@ -2,6 +2,8 @@
 
 A Rust program to resolve IP lists to their DNS PTR
 
+It uses the `1.1.1.1:53` DNS server.
+
 ## Example input
 
 ```text
