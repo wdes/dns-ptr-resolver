@@ -32,13 +32,32 @@ fn get_ptr(conn: UdpClientConnection, addr: IpAddr) {
 
 fn resolve_file(filename: &str, dns_server: &str) {
     let mut ips = vec![];
-    for line in read_to_string(filename).unwrap().lines() {
-        ips.push(IpAddr::from_str(line).unwrap());
+    match read_to_string(filename) {
+        Ok(file) => {
+            for line in file.lines() {
+                match IpAddr::from_str(line) {
+                    Ok(addr) => ips.push(addr),
+                    Err(err) => {
+                        eprintln!("Something went wrong while parsing the IP ({}): {}", line, err);
+                        process::exit(1);
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("Something went wrong while reading the file: {}", err);
+            process::exit(1);
+        }
     }
-
     rayon::ThreadPoolBuilder::new().num_threads(50).build_global().unwrap();
     let address = dns_server.parse().unwrap();
-    let conn = UdpClientConnection::new(address).unwrap();
+    let conn = match UdpClientConnection::new(address) {
+        Ok(conn) => conn,
+        Err(err) => {
+            eprintln!("Something went wrong with the UDP client connection: {}", err);
+            process::exit(1);
+        }
+    };
 
     ips.into_par_iter()
         .enumerate()
@@ -67,6 +86,6 @@ mod test {
 
     #[test]
     fn test_resolve_file() {
-        resolve_file("./example/ips-resolved.txt", "1.1.1.1:53");
+        resolve_file("./example/ips-to-resolve.txt", "1.1.1.1:53");
     }
 }
