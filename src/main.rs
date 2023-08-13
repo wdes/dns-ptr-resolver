@@ -27,15 +27,7 @@ struct IpToResolve {
     server: SocketAddr,
 }
 
-fn get_ptr(to_resolve: IpToResolve) -> PtrResult {
-    let conn = match TcpClientConnection::with_timeout(to_resolve.server, Duration::new(5, 0)) {
-        Ok(conn) => conn,
-        Err(err) => {
-            eprintln!("Something went wrong with the UDP client connection: {}", err);
-            process::exit(1);
-        }
-    };
-    let client = SyncClient::new(conn);
+fn get_ptr(to_resolve: IpToResolve, client: SyncClient<TcpClientConnection>) -> PtrResult {
     // Specify the name, note the final '.' which specifies it's an FQDN
     let name = match Name::from_str(&reverse(to_resolve.address)) {
         Ok(name) => name,
@@ -48,7 +40,14 @@ fn get_ptr(to_resolve: IpToResolve) -> PtrResult {
             process::exit(1);
         }
     };
+    ptr_resolve(name, to_resolve, client)
+}
 
+fn ptr_resolve(
+    name: Name,
+    to_resolve: IpToResolve,
+    client: SyncClient<TcpClientConnection>
+) -> PtrResult {
     let response: DnsResponse = match client.query(&name, DNSClass::IN, RecordType::PTR) {
         Ok(res) => res,
         Err(err) => {
@@ -75,16 +74,35 @@ fn get_ptr(to_resolve: IpToResolve) -> PtrResult {
         };
     }
 
-    if let Some(RData::PTR(ref res)) = answers[0].data() {
-        return PtrResult {
-            query_addr: to_resolve.address,
-            query: name,
-            result: Some(res.clone()),
-            error: None,
-        };
-    } else {
-        assert!(false, "unexpected result");
-        process::exit(1);
+    match answers[0].data() {
+        Some(RData::PTR(res)) => {
+            return PtrResult {
+                query_addr: to_resolve.address,
+                query: name,
+                result: Some(res.clone()),
+                error: None,
+            };
+        }
+        // Example: 87.246.7.75
+        // Replies:
+        // 75.7.246.87.in-addr.arpa. 3600	IN	CNAME	75.0-255.7.246.87.in-addr.arpa.
+        // 75.0-255.7.246.87.in-addr.arpa.	86400 IN PTR	bulbank.linkbg.com.
+        Some(RData::CNAME(res)) => {
+            return ptr_resolve(res.clone(), to_resolve, client);
+        }
+        Some(res) => {
+            eprintln!("Unexpected result ({:?}) for ({}) from: {}", res, name, to_resolve.server);
+            process::exit(1);
+        }
+        None => {
+            eprintln!("Weird empty result for ({}) from: {}", name, to_resolve.server);
+            return PtrResult {
+                query_addr: to_resolve.address,
+                query: name,
+                result: None,
+                error: None,
+            };
+        }
     }
 }
 
@@ -135,7 +153,17 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
     ips.into_par_iter()
         .enumerate()
         .for_each(|(_i, to_resolve)| {
-            match get_ptr(to_resolve).result {
+            let conn = match
+                TcpClientConnection::with_timeout(to_resolve.server, Duration::new(5, 0))
+            {
+                Ok(conn) => conn,
+                Err(err) => {
+                    eprintln!("Something went wrong with the UDP client connection: {}", err);
+                    process::exit(1);
+                }
+            };
+            let client = SyncClient::new(conn);
+            match get_ptr(to_resolve, client).result {
                 Some(res) => println!("{} # {}", to_resolve.address, res),
                 None => println!("{}", to_resolve.address),
             };
