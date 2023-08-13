@@ -1,11 +1,11 @@
 [package]
 name = "dns-ptr-resolver"
-version = "1.1.0"
+version = "1.2.0-dev"
 authors = ["William Desportes <williamdes@wdes.fr>"]
 edition = "2021"
 rust-version = "1.67.0"  # MSRV
 description = "A program to resolve DNS IPs to PTRs"
-homepage = "https://github.com/wdes/dns-ptr-resolver#readme"
+homepage = "https://github.com/wdes/dns-ptr-resolver/tree/v1.2.0-dev#readme"
 repository = "https://github.com/wdes/dns-ptr-resolver"
 readme = "README.md"
 keywords = ["dns", "ptr", "resolver"]
@@ -16,6 +16,12 @@ include = [
     "/Cargo.toml",
     "/LICENSE",
 ]
+
+[badges]
+github = { repository = "dns-ptr-resolver", branch = "master" }
+is-it-maintained-issue-resolution = { repository = "dns-ptr-resolver" }
+is-it-maintained-open-issues = { repository = "dns-ptr-resolver" }
+maintenance = { status = "passively-maintained" }
 
 [[bin]]
 name = "dns-ptr-resolver"
