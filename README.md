@@ -1,5 +1,9 @@
 # dns-ptr-resolver
 
+[![dependency status](https://deps.rs/repo/github/wdes/dns-ptr-resolver/status.svg)](https://deps.rs/repo/github/wdes/dns-ptr-resolver)
+[![crates.io](https://img.shields.io/crates/v/dns-ptr-resolver.svg)](https://crates.io/crates/dns-ptr-resolver)
+[![Build and test rust code](https://github.com/wdes/dns-ptr-resolver/actions/workflows/rust.yml/badge.svg)](https://github.com/wdes/dns-ptr-resolver/actions/workflows/rust.yml)
+
 A Rust program to resolve IP lists to their DNS PTR
 
 It uses the following TCP DNS servers in a round-robin mode:
@@ -10,6 +14,12 @@ It uses the following TCP DNS servers in a round-robin mode:
 - "8.8.4.4:53"
 
 And 30 threads.
+
+## Install
+
+```sh
+cargo install dns-ptr-resolver
+```
 
 ## Example input
 
@@ -42,5 +52,5 @@ And 30 threads.
 ## Rebuild example
 
 ```sh
-cargo run --release ./example/ips-to-resolve.txt > ./example/ips-resolved.txt
+dns-ptr-resolver ./example/ips-to-resolve.txt 1> ./example/ips-resolved.txt
 ```
