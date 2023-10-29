@@ -1,18 +1,18 @@
-use hickory_client::client::{ Client, SyncClient };
-use hickory_client::tcp::TcpClientConnection;
-use std::str::FromStr;
-use std::net::IpAddr;
+use hickory_client::client::{Client, SyncClient};
 use hickory_client::op::DnsResponse;
-use hickory_client::rr::{ DNSClass, Name, RData, Record, RecordType };
-use rustdns::util::reverse;
+use hickory_client::rr::{DNSClass, Name, RData, Record, RecordType};
+use hickory_client::tcp::TcpClientConnection;
 use rayon::prelude::*;
-use std::fs::read_to_string;
+use rustdns::util::reverse;
 use std::env;
-use std::process;
+use std::fs::read_to_string;
+use std::net::IpAddr;
 use std::net::SocketAddr;
-use weighted_rs::{ RoundrobinWeight, Weight };
-use std::time::Duration;
+use std::process;
+use std::str::FromStr;
 use std::thread;
+use std::time::Duration;
+use weighted_rs::{RoundrobinWeight, Weight};
 
 struct PtrResult {
     query_addr: IpAddr,
@@ -46,14 +46,17 @@ fn get_ptr(to_resolve: IpToResolve, client: SyncClient<TcpClientConnection>) -> 
 fn ptr_resolve(
     name: Name,
     to_resolve: IpToResolve,
-    client: SyncClient<TcpClientConnection>
+    client: SyncClient<TcpClientConnection>,
 ) -> PtrResult {
     let response: DnsResponse = match client.query(&name, DNSClass::IN, RecordType::PTR) {
         Ok(res) => res,
         Err(err) => {
             let two_hundred_millis = Duration::from_millis(400);
             thread::sleep(two_hundred_millis);
-            eprintln!("Query error for ({}) from ({}): {}", name, to_resolve.server, err);
+            eprintln!(
+                "Query error for ({}) from ({}): {}",
+                name, to_resolve.server, err
+            );
             return PtrResult {
                 query_addr: to_resolve.address,
                 query: name,
@@ -91,11 +94,17 @@ fn ptr_resolve(
             return ptr_resolve(res.to_lowercase(), to_resolve, client);
         }
         Some(res) => {
-            eprintln!("Unexpected result ({:?}) for ({}) from: {}", res, name, to_resolve.server);
+            eprintln!(
+                "Unexpected result ({:?}) for ({}) from: {}",
+                res, name, to_resolve.server
+            );
             process::exit(1);
         }
         None => {
-            eprintln!("Weird empty result for ({}) from: {}", name, to_resolve.server);
+            eprintln!(
+                "Weird empty result for ({}) from: {}",
+                name, to_resolve.server
+            );
             return PtrResult {
                 query_addr: to_resolve.address,
                 query: name,
@@ -112,7 +121,10 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
         let address = match dns_server.parse() {
             Ok(addr) => addr,
             Err(err) => {
-                eprintln!("Something went wrong while parsing the DNS server address: {}", err);
+                eprintln!(
+                    "Something went wrong while parsing the DNS server address: {}",
+                    err
+                );
                 process::exit(1);
             }
         };
@@ -125,13 +137,15 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
         Ok(file) => {
             for line in file.lines() {
                 match IpAddr::from_str(line) {
-                    Ok(addr) =>
-                        ips.push(IpToResolve {
-                            address: addr,
-                            server: rr.next().unwrap(),
-                        }),
+                    Ok(addr) => ips.push(IpToResolve {
+                        address: addr,
+                        server: rr.next().unwrap(),
+                    }),
                     Err(err) => {
-                        eprintln!("Something went wrong while parsing the IP ({}): {}", line, err);
+                        eprintln!(
+                            "Something went wrong while parsing the IP ({}): {}",
+                            line, err
+                        );
                         process::exit(1);
                     }
                 }
@@ -142,10 +156,16 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
             process::exit(1);
         }
     }
-    match rayon::ThreadPoolBuilder::new().num_threads(30).build_global() {
+    match rayon::ThreadPoolBuilder::new()
+        .num_threads(30)
+        .build_global()
+    {
         Ok(r) => r,
         Err(err) => {
-            eprintln!("Something went wrong while building the thread pool: {}", err);
+            eprintln!(
+                "Something went wrong while building the thread pool: {}",
+                err
+            );
             process::exit(1);
         }
     }
@@ -153,15 +173,17 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
     ips.into_par_iter()
         .enumerate()
         .for_each(|(_i, to_resolve)| {
-            let conn = match
-                TcpClientConnection::with_timeout(to_resolve.server, Duration::new(5, 0))
-            {
-                Ok(conn) => conn,
-                Err(err) => {
-                    eprintln!("Something went wrong with the UDP client connection: {}", err);
-                    process::exit(1);
-                }
-            };
+            let conn =
+                match TcpClientConnection::with_timeout(to_resolve.server, Duration::new(5, 0)) {
+                    Ok(conn) => conn,
+                    Err(err) => {
+                        eprintln!(
+                            "Something went wrong with the UDP client connection: {}",
+                            err
+                        );
+                        process::exit(1);
+                    }
+                };
             let client = SyncClient::new(conn);
             match get_ptr(to_resolve, client).result {
                 Some(res) => println!("{} # {}", to_resolve.address, res),
@@ -176,7 +198,10 @@ fn main() {
         eprintln!("Use: dns-ptr-resolver ./ips.txt");
         process::exit(1);
     }
-    resolve_file(&args[1], vec!["1.1.1.1:53", "1.0.0.1:53", "8.8.8.8:53", "8.8.4.4:53"])
+    resolve_file(
+        &args[1],
+        vec!["1.1.1.1:53", "1.0.0.1:53", "8.8.8.8:53", "8.8.4.4:53"],
+    )
 }
 
 #[cfg(test)]
@@ -185,7 +210,10 @@ mod test {
 
     #[test]
     fn test_reverse_dns() {
-        assert_eq!(reverse("192.0.2.12".parse().unwrap()), "12.2.0.192.in-addr.arpa.");
+        assert_eq!(
+            reverse("192.0.2.12".parse().unwrap()),
+            "12.2.0.192.in-addr.arpa."
+        );
     }
 
     #[test]
