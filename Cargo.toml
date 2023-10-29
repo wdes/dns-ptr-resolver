@@ -31,6 +31,6 @@ path = "src/main.rs"
 
 [dependencies]
 rayon = "1.7.0"
-trust-dns-client = { version = "0.22.0", default-features = false }
+hickory-client = { version = "0.24.0", default-features = false }
 rustdns = "0.4.0"
 weighted-rs = "0.1.3"

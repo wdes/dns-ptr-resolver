@@ -1,9 +1,9 @@
-use trust_dns_client::client::{ Client, SyncClient };
-use trust_dns_client::tcp::TcpClientConnection;
+use hickory_client::client::{ Client, SyncClient };
+use hickory_client::tcp::TcpClientConnection;
 use std::str::FromStr;
 use std::net::IpAddr;
-use trust_dns_client::op::DnsResponse;
-use trust_dns_client::rr::{ DNSClass, Name, RData, Record, RecordType };
+use hickory_client::op::DnsResponse;
+use hickory_client::rr::{ DNSClass, Name, RData, Record, RecordType };
 use rustdns::util::reverse;
 use rayon::prelude::*;
 use std::fs::read_to_string;
@@ -79,7 +79,7 @@ fn ptr_resolve(
             return PtrResult {
                 query_addr: to_resolve.address,
                 query: name,
-                result: Some(res.clone()),
+                result: Some(res.to_lowercase()),
                 error: None,
             };
         }
@@ -88,7 +88,7 @@ fn ptr_resolve(
         // 75.7.246.87.in-addr.arpa. 3600	IN	CNAME	75.0-255.7.246.87.in-addr.arpa.
         // 75.0-255.7.246.87.in-addr.arpa.	86400 IN PTR	bulbank.linkbg.com.
         Some(RData::CNAME(res)) => {
-            return ptr_resolve(res.clone(), to_resolve, client);
+            return ptr_resolve(res.to_lowercase(), to_resolve, client);
         }
         Some(res) => {
             eprintln!("Unexpected result ({:?}) for ({}) from: {}", res, name, to_resolve.server);
