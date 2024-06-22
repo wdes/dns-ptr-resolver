@@ -14,20 +14,21 @@ use std::thread;
 use std::time::Duration;
 use weighted_rs::{RoundrobinWeight, Weight};
 
-struct PtrResult {
+#[derive(Clone, Debug, PartialEq)]
+pub struct PtrResult {
     query_addr: IpAddr,
     query: Name,
     result: Option<Name>,
     error: Option<String>,
 }
 
-#[derive(Copy, Clone)]
-struct IpToResolve {
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct IpToResolve {
     address: IpAddr,
     server: SocketAddr,
 }
 
-fn get_ptr(to_resolve: IpToResolve, client: SyncClient<TcpClientConnection>) -> PtrResult {
+pub fn get_ptr(to_resolve: IpToResolve, client: SyncClient<TcpClientConnection>) -> PtrResult {
     // Specify the name, note the final '.' which specifies it's an FQDN
     let name = match Name::from_str(&reverse(to_resolve.address)) {
         Ok(name) => name,
@@ -43,7 +44,7 @@ fn get_ptr(to_resolve: IpToResolve, client: SyncClient<TcpClientConnection>) -> 
     ptr_resolve(name, to_resolve, client)
 }
 
-fn ptr_resolve(
+pub fn ptr_resolve(
     name: Name,
     to_resolve: IpToResolve,
     client: SyncClient<TcpClientConnection>,
@@ -207,6 +208,40 @@ fn main() {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_get_ptr() {
+        let conn = match TcpClientConnection::with_timeout(
+            "1.1.1.1:53".parse().expect("To parse"),
+            Duration::new(5, 0),
+        ) {
+            Ok(conn) => conn,
+            Err(err) => {
+                eprintln!(
+                    "Something went wrong with the UDP client connection: {}",
+                    err
+                );
+                process::exit(1);
+            }
+        };
+        let client = SyncClient::new(conn);
+
+        assert_eq!(
+            get_ptr(
+                IpToResolve {
+                    address: "8.8.8.8".parse().expect("To parse"),
+                    server: "8.8.8.8:53".parse().expect("To parse"),
+                },
+                client
+            ),
+            PtrResult {
+                query_addr: "8.8.8.8".parse().expect("To parse"),
+                query: Name::from_str_relaxed("8.8.8.8.in-addr.arpa.").unwrap(),
+                result: Some(Name::from_str_relaxed("dns.google.").unwrap()),
+                error: None,
+            }
+        );
+    }
 
     #[test]
     fn test_reverse_dns() {
