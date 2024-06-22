@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, thread};
 
 use dns_ptr_resolver::{get_ptr, IpToResolve};
 use hickory_client::client::SyncClient;
@@ -81,10 +81,19 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
                     }
                 };
             let client = SyncClient::new(conn);
-            match get_ptr(to_resolve, client).result {
-                Some(res) => println!("{} # {}", to_resolve.address, res),
-                None => println!("{}", to_resolve.address),
-            };
+            let ptr_result = get_ptr(to_resolve, client);
+            match ptr_result {
+                Ok(ptr) => match ptr.result {
+                    Some(res) => println!("{} # {}", to_resolve.address, res),
+                    None => println!("{}", to_resolve.address),
+                },
+                Err(err) => {
+                    let two_hundred_millis = Duration::from_millis(400);
+                    thread::sleep(two_hundred_millis);
+
+                    eprintln!("Error for {} -> {}", to_resolve.address, err.message)
+                }
+            }
         });
 }
 

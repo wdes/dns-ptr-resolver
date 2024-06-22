@@ -4,10 +4,8 @@ use hickory_client::rr::{DNSClass, Name, RData, Record, RecordType};
 use hickory_client::tcp::TcpClientConnection;
 use rustdns::util::reverse;
 use std::net::{IpAddr, SocketAddr};
-use std::process;
 use std::str::FromStr;
-use std::thread;
-use std::time::Duration;
+use std::{error::Error, fmt};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PtrResult {
@@ -23,23 +21,37 @@ pub struct IpToResolve {
     pub server: SocketAddr,
 }
 
+#[derive(Debug)]
+pub struct ResolvingError {
+    pub message: String,
+}
+
+impl Error for ResolvingError {}
+
+impl fmt::Display for ResolvingError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
 /**
  * Resolve a DNS IP adddress (IPv4/IPv6) into a DNS pointer
  */
-pub fn get_ptr(to_resolve: IpToResolve, client: SyncClient<TcpClientConnection>) -> PtrResult {
+pub fn get_ptr(
+    to_resolve: IpToResolve,
+    client: SyncClient<TcpClientConnection>,
+) -> Result<PtrResult, ResolvingError> {
     // Specify the name, note the final '.' which specifies it's an FQDN
-    let name = match Name::from_str(&reverse(to_resolve.address)) {
-        Ok(name) => name,
-        Err(err) => {
-            eprintln!(
+    match Name::from_str(&reverse(to_resolve.address)) {
+        Ok(name) => ptr_resolve(name, to_resolve, client),
+        Err(err) => Err(ResolvingError {
+            message: format!(
                 "Something went wrong while building the name ({}): {}",
                 reverse(to_resolve.address),
                 err
-            );
-            process::exit(1);
-        }
-    };
-    ptr_resolve(name, to_resolve, client)
+            ),
+        }),
+    }
 }
 
 /**
@@ -50,44 +62,38 @@ pub fn ptr_resolve(
     name: Name,
     to_resolve: IpToResolve,
     client: SyncClient<TcpClientConnection>,
-) -> PtrResult {
+) -> Result<PtrResult, ResolvingError> {
     let response: DnsResponse = match client.query(&name, DNSClass::IN, RecordType::PTR) {
         Ok(res) => res,
         Err(err) => {
-            let two_hundred_millis = Duration::from_millis(400);
-            thread::sleep(two_hundred_millis);
-            eprintln!(
-                "Query error for ({}) from ({}): {}",
-                name, to_resolve.server, err
-            );
-            return PtrResult {
-                query_addr: to_resolve.address,
-                query: name,
-                result: None,
-                error: Some(err.to_string()),
-            };
+            return Err(ResolvingError {
+                message: format!(
+                    "Query error for ({}) from ({}): {}",
+                    name, to_resolve.server, err
+                ),
+            })
         }
     };
 
     let answers: &[Record] = response.answers();
 
     if answers.len() == 0 {
-        return PtrResult {
+        return Ok(PtrResult {
             query_addr: to_resolve.address,
             query: name,
             result: None,
             error: None,
-        };
+        });
     }
 
     match answers[0].data() {
         Some(RData::PTR(res)) => {
-            return PtrResult {
+            return Ok(PtrResult {
                 query_addr: to_resolve.address,
                 query: name,
                 result: Some(res.to_lowercase()),
                 error: None,
-            };
+            });
         }
         // Example: 87.246.7.75
         // Replies:
@@ -97,23 +103,20 @@ pub fn ptr_resolve(
             return ptr_resolve(res.to_lowercase(), to_resolve, client);
         }
         Some(res) => {
-            eprintln!(
-                "Unexpected result ({:?}) for ({}) from: {}",
-                res, name, to_resolve.server
-            );
-            process::exit(1);
+            return Err(ResolvingError {
+                message: format!(
+                    "Unexpected result ({:?}) for ({}) from: {}",
+                    res, name, to_resolve.server
+                ),
+            });
         }
         None => {
-            eprintln!(
-                "Weird empty result for ({}) from: {}",
-                name, to_resolve.server
-            );
-            return PtrResult {
-                query_addr: to_resolve.address,
-                query: name,
-                result: None,
-                error: None,
-            };
+            return Err(ResolvingError {
+                message: format!(
+                    "Weird empty result for ({}) from: {}",
+                    name, to_resolve.server
+                ),
+            });
         }
     }
 }
@@ -121,6 +124,8 @@ pub fn ptr_resolve(
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::process;
+    use std::time::Duration;
 
     #[test]
     fn test_get_ptr() {
@@ -146,7 +151,8 @@ mod test {
                     server: server,
                 },
                 client
-            ),
+            )
+            .unwrap(),
             PtrResult {
                 query_addr: query_address,
                 query: Name::from_str_relaxed("8.8.8.8.in-addr.arpa.").unwrap(),
@@ -182,7 +188,8 @@ mod test {
                     server: server,
                 },
                 client
-            ),
+            )
+            .unwrap(),
             PtrResult {
                 query_addr: query_ip_unused,
                 query: name_to_resolve,
