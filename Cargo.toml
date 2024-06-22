@@ -23,6 +23,10 @@ is-it-maintained-issue-resolution = { repository = "dns-ptr-resolver" }
 is-it-maintained-open-issues = { repository = "dns-ptr-resolver" }
 maintenance = { status = "passively-maintained" }
 
+[lib]
+name = "dns_ptr_resolver"
+path = "src/lib.rs"
+
 [[bin]]
 name = "dns-ptr-resolver"
 path = "src/main.rs"
