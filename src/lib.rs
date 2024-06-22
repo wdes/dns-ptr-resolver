@@ -8,12 +8,13 @@ use std::str::FromStr;
 use std::{error::Error, fmt};
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PtrResult {
-    // For example: one.one.one.one.
-    // For example: dns.google.
+/// The result of resolving the pointer or the IP
+pub struct ResolvedResult {
+    /// For example: one.one.one.one.
+    /// For example: dns.google.
     pub query: Name,
-    // For example: 1.1.1.1.in-addr.arpa.
-    // For example: 8.8.8.8.in-addr.arpa.
+    /// For example: 1.1.1.1.in-addr.arpa.
+    /// For example: 8.8.8.8.in-addr.arpa.
     pub result: Option<Name>,
     pub error: Option<String>,
 }
@@ -33,11 +34,32 @@ impl fmt::Display for ResolvingError {
 
 /**
  * Resolve a DNS IP adddress (IPv4/IPv6) into a DNS pointer
+ * ```
+ * use hickory_client::client::SyncClient;
+ * use hickory_client::rr::Name;
+ * use hickory_client::tcp::TcpClientConnection;
+ *
+ * use dns_ptr_resolver::{get_ptr, ResolvedResult};
+ *
+ * let server = "1.1.1.1:53".parse().expect("To parse");
+ * let conn = TcpClientConnection::with_timeout(server, std::time::Duration::new(5, 0)).unwrap();
+ * let client = SyncClient::new(conn);
+ * let query_address = "8.8.8.8".parse().expect("To parse");
+ *
+ * assert_eq!(
+ *  get_ptr(query_address, client).unwrap(),
+ *  ResolvedResult {
+ *      query: Name::from_str_relaxed("8.8.8.8.in-addr.arpa.").unwrap(),
+ *      result: Some(Name::from_str_relaxed("dns.google.").unwrap()),
+ *      error: None,
+ *  }
+ * );
+ * ```
  */
 pub fn get_ptr(
     ip_address: IpAddr,
     client: SyncClient<TcpClientConnection>,
-) -> Result<PtrResult, ResolvingError> {
+) -> Result<ResolvedResult, ResolvingError> {
     // Specify the name, note the final '.' which specifies it's an FQDN
     match Name::from_str(&reverse(ip_address)) {
         Ok(name) => ptr_resolve(name, client),
@@ -53,11 +75,33 @@ pub fn get_ptr(
 
 /**
  * This will resolve a name into its DNS pointer value
+ * ```
+ * use hickory_client::client::SyncClient;
+ * use hickory_client::rr::Name;
+ * use hickory_client::tcp::TcpClientConnection;
+ *
+ * use dns_ptr_resolver::{ptr_resolve, ResolvedResult};
+ *
+ * let server = "8.8.8.8:53".parse().expect("To parse");
+ * let conn = TcpClientConnection::with_timeout(server, std::time::Duration::new(5, 0)).unwrap();
+ * let client = SyncClient::new(conn);
+ *
+ * let name_to_resolve = Name::from_str_relaxed("1.1.1.1.in-addr.arpa.").unwrap();
+ *
+ * assert_eq!(
+ *  ptr_resolve(name_to_resolve.clone(), client).unwrap(),
+ *  ResolvedResult {
+ *      query: name_to_resolve,
+ *      result: Some(Name::from_str_relaxed("one.one.one.one.").unwrap()),
+ *      error: None,
+ *  }
+ * );
+ * ```
  */
 pub fn ptr_resolve(
     name: Name,
     client: SyncClient<TcpClientConnection>,
-) -> Result<PtrResult, ResolvingError> {
+) -> Result<ResolvedResult, ResolvingError> {
     let response: DnsResponse = match client.query(&name, DNSClass::IN, RecordType::PTR) {
         Ok(res) => res,
         Err(err) => {
@@ -70,7 +114,7 @@ pub fn ptr_resolve(
     let answers: &[Record] = response.answers();
 
     if answers.len() == 0 {
-        return Ok(PtrResult {
+        return Ok(ResolvedResult {
             query: name,
             result: None,
             error: None,
@@ -79,7 +123,7 @@ pub fn ptr_resolve(
 
     match answers[0].data() {
         Some(RData::PTR(res)) => {
-            return Ok(PtrResult {
+            return Ok(ResolvedResult {
                 query: name,
                 result: Some(res.to_lowercase()),
                 error: None,
@@ -130,7 +174,7 @@ mod test {
 
         assert_eq!(
             get_ptr(query_address, client).unwrap(),
-            PtrResult {
+            ResolvedResult {
                 query: Name::from_str_relaxed("8.8.8.8.in-addr.arpa.").unwrap(),
                 result: Some(Name::from_str_relaxed("dns.google.").unwrap()),
                 error: None,
@@ -157,7 +201,7 @@ mod test {
 
         assert_eq!(
             ptr_resolve(name_to_resolve.clone(), client).unwrap(),
-            PtrResult {
+            ResolvedResult {
                 query: name_to_resolve,
                 result: Some(Name::from_str_relaxed("one.one.one.one.").unwrap()),
                 error: None,
