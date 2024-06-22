@@ -9,7 +9,6 @@ use std::{error::Error, fmt};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PtrResult {
-    pub query_addr: IpAddr,
     pub query: Name,
     pub result: Option<Name>,
     pub error: Option<String>,
@@ -38,16 +37,16 @@ impl fmt::Display for ResolvingError {
  * Resolve a DNS IP adddress (IPv4/IPv6) into a DNS pointer
  */
 pub fn get_ptr(
-    to_resolve: IpToResolve,
+    ip_address: IpAddr,
     client: SyncClient<TcpClientConnection>,
 ) -> Result<PtrResult, ResolvingError> {
     // Specify the name, note the final '.' which specifies it's an FQDN
-    match Name::from_str(&reverse(to_resolve.address)) {
-        Ok(name) => ptr_resolve(name, to_resolve, client),
+    match Name::from_str(&reverse(ip_address)) {
+        Ok(name) => ptr_resolve(name, client),
         Err(err) => Err(ResolvingError {
             message: format!(
                 "Something went wrong while building the name ({}): {}",
-                reverse(to_resolve.address),
+                reverse(ip_address),
                 err
             ),
         }),
@@ -56,21 +55,16 @@ pub fn get_ptr(
 
 /**
  * This will resolve a name into its DNS pointer value
- * The to_resolve argument will not really be used, but is needed for PtrResult
  */
 pub fn ptr_resolve(
     name: Name,
-    to_resolve: IpToResolve,
     client: SyncClient<TcpClientConnection>,
 ) -> Result<PtrResult, ResolvingError> {
     let response: DnsResponse = match client.query(&name, DNSClass::IN, RecordType::PTR) {
         Ok(res) => res,
         Err(err) => {
             return Err(ResolvingError {
-                message: format!(
-                    "Query error for ({}) from ({}): {}",
-                    name, to_resolve.server, err
-                ),
+                message: format!("Query error for ({}): {}", name, err),
             })
         }
     };
@@ -79,7 +73,6 @@ pub fn ptr_resolve(
 
     if answers.len() == 0 {
         return Ok(PtrResult {
-            query_addr: to_resolve.address,
             query: name,
             result: None,
             error: None,
@@ -89,7 +82,6 @@ pub fn ptr_resolve(
     match answers[0].data() {
         Some(RData::PTR(res)) => {
             return Ok(PtrResult {
-                query_addr: to_resolve.address,
                 query: name,
                 result: Some(res.to_lowercase()),
                 error: None,
@@ -100,22 +92,16 @@ pub fn ptr_resolve(
         // 75.7.246.87.in-addr.arpa. 3600	IN	CNAME	75.0-255.7.246.87.in-addr.arpa.
         // 75.0-255.7.246.87.in-addr.arpa.	86400 IN PTR	bulbank.linkbg.com.
         Some(RData::CNAME(res)) => {
-            return ptr_resolve(res.to_lowercase(), to_resolve, client);
+            return ptr_resolve(res.to_lowercase(), client);
         }
         Some(res) => {
             return Err(ResolvingError {
-                message: format!(
-                    "Unexpected result ({:?}) for ({}) from: {}",
-                    res, name, to_resolve.server
-                ),
+                message: format!("Unexpected result ({:?}) from: {}", res, name),
             });
         }
         None => {
             return Err(ResolvingError {
-                message: format!(
-                    "Weird empty result for ({}) from: {}",
-                    name, to_resolve.server
-                ),
+                message: format!("Weird empty result from: {}", name),
             });
         }
     }
@@ -145,16 +131,8 @@ mod test {
         let query_address = "8.8.8.8".parse().expect("To parse");
 
         assert_eq!(
-            get_ptr(
-                IpToResolve {
-                    address: query_address,
-                    server: server,
-                },
-                client
-            )
-            .unwrap(),
+            get_ptr(query_address, client).unwrap(),
             PtrResult {
-                query_addr: query_address,
                 query: Name::from_str_relaxed("8.8.8.8.in-addr.arpa.").unwrap(),
                 result: Some(Name::from_str_relaxed("dns.google.").unwrap()),
                 error: None,
@@ -178,20 +156,10 @@ mod test {
         let client = SyncClient::new(conn);
 
         let name_to_resolve = Name::from_str_relaxed("1.1.1.1.in-addr.arpa.").unwrap();
-        let query_ip_unused = "127.0.0.1".parse().expect("To parse");
 
         assert_eq!(
-            ptr_resolve(
-                name_to_resolve.clone(),
-                IpToResolve {
-                    address: query_ip_unused,
-                    server: server,
-                },
-                client
-            )
-            .unwrap(),
+            ptr_resolve(name_to_resolve.clone(), client).unwrap(),
             PtrResult {
-                query_addr: query_ip_unused,
                 query: name_to_resolve,
                 result: Some(Name::from_str_relaxed("one.one.one.one.").unwrap()),
                 error: None,

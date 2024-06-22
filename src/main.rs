@@ -81,7 +81,7 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
                     }
                 };
             let client = SyncClient::new(conn);
-            let ptr_result = get_ptr(to_resolve, client);
+            let ptr_result = get_ptr(to_resolve.address, client);
             match ptr_result {
                 Ok(ptr) => match ptr.result {
                     Some(res) => println!("{} # {}", to_resolve.address, res),
@@ -91,7 +91,10 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
                     let two_hundred_millis = Duration::from_millis(400);
                     thread::sleep(two_hundred_millis);
 
-                    eprintln!("Error for {} -> {}", to_resolve.address, err.message)
+                    eprintln!(
+                        "[{}] Error for {} -> {}",
+                        to_resolve.server, to_resolve.address, err.message
+                    )
                 }
             }
         });
