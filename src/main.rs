@@ -44,6 +44,10 @@ pub fn get_ptr(to_resolve: IpToResolve, client: SyncClient<TcpClientConnection>)
     ptr_resolve(name, to_resolve, client)
 }
 
+/**
+ * This will resolve a name into its DNS pointer value
+ * The to_resolve argument will not really be used, but is needed for PtrResult
+ */
 pub fn ptr_resolve(
     name: Name,
     to_resolve: IpToResolve,
@@ -211,10 +215,8 @@ mod test {
 
     #[test]
     fn test_get_ptr() {
-        let conn = match TcpClientConnection::with_timeout(
-            "1.1.1.1:53".parse().expect("To parse"),
-            Duration::new(5, 0),
-        ) {
+        let server = "8.8.8.8:53".parse().expect("To parse");
+        let conn = match TcpClientConnection::with_timeout(server, Duration::new(5, 0)) {
             Ok(conn) => conn,
             Err(err) => {
                 eprintln!(
@@ -226,18 +228,56 @@ mod test {
         };
         let client = SyncClient::new(conn);
 
+        let query_address = "8.8.8.8".parse().expect("To parse");
+
         assert_eq!(
             get_ptr(
                 IpToResolve {
-                    address: "8.8.8.8".parse().expect("To parse"),
-                    server: "8.8.8.8:53".parse().expect("To parse"),
+                    address: query_address,
+                    server: server,
                 },
                 client
             ),
             PtrResult {
-                query_addr: "8.8.8.8".parse().expect("To parse"),
+                query_addr: query_address,
                 query: Name::from_str_relaxed("8.8.8.8.in-addr.arpa.").unwrap(),
                 result: Some(Name::from_str_relaxed("dns.google.").unwrap()),
+                error: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_ptr_resolve() {
+        let server = "1.1.1.1:53".parse().expect("To parse");
+        let conn = match TcpClientConnection::with_timeout(server, Duration::new(5, 0)) {
+            Ok(conn) => conn,
+            Err(err) => {
+                eprintln!(
+                    "Something went wrong with the UDP client connection: {}",
+                    err
+                );
+                process::exit(1);
+            }
+        };
+        let client = SyncClient::new(conn);
+
+        let name_to_resolve = Name::from_str_relaxed("1.1.1.1.in-addr.arpa.").unwrap();
+        let query_ip_unused = "127.0.0.1".parse().expect("To parse");
+
+        assert_eq!(
+            ptr_resolve(
+                name_to_resolve.clone(),
+                IpToResolve {
+                    address: query_ip_unused,
+                    server: server,
+                },
+                client
+            ),
+            PtrResult {
+                query_addr: query_ip_unused,
+                query: name_to_resolve,
+                result: Some(Name::from_str_relaxed("one.one.one.one.").unwrap()),
                 error: None,
             }
         );
