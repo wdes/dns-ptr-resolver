@@ -1,6 +1,6 @@
 [package]
 name = "dns-ptr-resolver"
-version = "1.2.0-dev"
+version = "1.2.0"
 authors = ["William Desportes <williamdes@wdes.fr>"]
 edition = "2021"
 rust-version = "1.67.0"  # MSRV
