@@ -1,6 +1,6 @@
 use std::{env, thread};
 
-use dns_ptr_resolver::{get_ptr, IpToResolve};
+use dns_ptr_resolver::get_ptr;
 use hickory_client::client::SyncClient;
 use hickory_client::tcp::TcpClientConnection;
 use rayon::prelude::*;
@@ -10,6 +10,12 @@ use std::process;
 use std::str::FromStr;
 use std::time::Duration;
 use weighted_rs::{RoundrobinWeight, Weight};
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct IpToResolve {
+    pub address: IpAddr,
+    pub server: SocketAddr,
+}
 
 fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
     let mut rr: RoundrobinWeight<SocketAddr> = RoundrobinWeight::new();

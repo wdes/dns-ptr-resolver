@@ -3,21 +3,19 @@ use hickory_client::op::DnsResponse;
 use hickory_client::rr::{DNSClass, Name, RData, Record, RecordType};
 use hickory_client::tcp::TcpClientConnection;
 use rustdns::util::reverse;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::str::FromStr;
 use std::{error::Error, fmt};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PtrResult {
+    // For example: one.one.one.one.
+    // For example: dns.google.
     pub query: Name,
+    // For example: 1.1.1.1.in-addr.arpa.
+    // For example: 8.8.8.8.in-addr.arpa.
     pub result: Option<Name>,
     pub error: Option<String>,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct IpToResolve {
-    pub address: IpAddr,
-    pub server: SocketAddr,
 }
 
 #[derive(Debug)]
