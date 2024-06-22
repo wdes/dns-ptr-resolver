@@ -23,6 +23,9 @@ pub struct IpToResolve {
     pub server: SocketAddr,
 }
 
+/**
+ * Resolve a DNS IP adddress (IPv4/IPv6) into a DNS pointer
+ */
 pub fn get_ptr(to_resolve: IpToResolve, client: SyncClient<TcpClientConnection>) -> PtrResult {
     // Specify the name, note the final '.' which specifies it's an FQDN
     let name = match Name::from_str(&reverse(to_resolve.address)) {
