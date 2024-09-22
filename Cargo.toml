@@ -36,6 +36,6 @@ path = "src/main.rs"
 
 [dependencies]
 rayon = "1.10.0"
-hickory-client = { version = "0.24.1", default-features = false }
+hickory-resolver = { version = "0.24.1", default-features = false, features = ["tokio-runtime", "dns-over-h3", "dns-over-https", "dns-over-quic"]}
 rustdns = "0.4.0"
 weighted-rs = "0.1.3"

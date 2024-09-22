@@ -1,7 +1,6 @@
-use hickory_client::client::{Client, SyncClient};
-use hickory_client::op::DnsResponse;
-use hickory_client::rr::{DNSClass, Name, RData, Record, RecordType};
-use hickory_client::tcp::TcpClientConnection;
+use hickory_resolver::proto::rr::{RData, Record, RecordType};
+use hickory_resolver::{Name, Resolver};
+
 use rustdns::util::reverse;
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -35,19 +34,31 @@ impl fmt::Display for ResolvingError {
 /**
  * Resolve a DNS IP adddress (IPv4/IPv6) into a DNS pointer
  * ```
- * use hickory_client::client::SyncClient;
- * use hickory_client::rr::Name;
- * use hickory_client::tcp::TcpClientConnection;
+ * use hickory_resolver::{Name, Resolver};
+ * use hickory_resolver::config::{NameServerConfigGroup, ResolverOpts, ResolverConfig};
+ * use std::time::Duration;
+ * use std::net::IpAddr;
+ * use std::str::FromStr;// IpAddr::from_str
  *
  * use dns_ptr_resolver::{get_ptr, ResolvedResult};
  *
- * let server = "1.1.1.1:53".parse().expect("To parse");
- * let conn = TcpClientConnection::with_timeout(server, std::time::Duration::new(5, 0)).unwrap();
- * let client = SyncClient::new(conn);
+ * let server_ip = "1.1.1.1";
+ *
+ * let server = NameServerConfigGroup::from_ips_clear(
+ *      &[IpAddr::from_str(server_ip).unwrap()],
+ *      53,// Port 53
+ *      true,
+ * );
+ * let config = ResolverConfig::from_parts(None, vec![], server);
+ * let mut options = ResolverOpts::default();
+ * options.timeout = Duration::from_secs(5);
+ * options.attempts = 1; // One try
+ *
+ * let resolver = Resolver::new(config, options).unwrap();
  * let query_address = "8.8.8.8".parse().expect("To parse");
  *
  * assert_eq!(
- *  get_ptr(query_address, client).unwrap(),
+ *  get_ptr(query_address, resolver).unwrap(),
  *  ResolvedResult {
  *      query: Name::from_str_relaxed("8.8.8.8.in-addr.arpa.").unwrap(),
  *      result: Some(Name::from_str_relaxed("dns.google.").unwrap()),
@@ -56,13 +67,10 @@ impl fmt::Display for ResolvingError {
  * );
  * ```
  */
-pub fn get_ptr(
-    ip_address: IpAddr,
-    client: SyncClient<TcpClientConnection>,
-) -> Result<ResolvedResult, ResolvingError> {
+pub fn get_ptr(ip_address: IpAddr, resolver: Resolver) -> Result<ResolvedResult, ResolvingError> {
     // Specify the name, note the final '.' which specifies it's an FQDN
     match Name::from_str(&reverse(ip_address)) {
-        Ok(name) => ptr_resolve(name, client),
+        Ok(name) => ptr_resolve(name, resolver),
         Err(err) => Err(ResolvingError {
             message: format!(
                 "Something went wrong while building the name ({}): {}",
@@ -76,20 +84,32 @@ pub fn get_ptr(
 /**
  * This will resolve a name into its DNS pointer value
  * ```
- * use hickory_client::client::SyncClient;
- * use hickory_client::rr::Name;
- * use hickory_client::tcp::TcpClientConnection;
+ * use hickory_resolver::{Name, Resolver};
+ * use hickory_resolver::config::{NameServerConfigGroup, ResolverOpts, ResolverConfig};
+ * use std::time::Duration;
+ * use std::net::IpAddr;
+ * use std::str::FromStr;// IpAddr::from_str
  *
  * use dns_ptr_resolver::{ptr_resolve, ResolvedResult};
  *
- * let server = "8.8.8.8:53".parse().expect("To parse");
- * let conn = TcpClientConnection::with_timeout(server, std::time::Duration::new(5, 0)).unwrap();
- * let client = SyncClient::new(conn);
+ * let server_ip = "8.8.8.8";
+ *
+ * let server = NameServerConfigGroup::from_ips_clear(
+ *      &[IpAddr::from_str(server_ip).unwrap()],
+ *      53,// Port 53
+ *      true,
+ * );
+ * let config = ResolverConfig::from_parts(None, vec![], server);
+ * let mut options = ResolverOpts::default();
+ * options.timeout = Duration::from_secs(5);
+ * options.attempts = 1; // One try
+ *
+ * let resolver = Resolver::new(config, options).unwrap();
  *
  * let name_to_resolve = Name::from_str_relaxed("1.1.1.1.in-addr.arpa.").unwrap();
  *
  * assert_eq!(
- *  ptr_resolve(name_to_resolve.clone(), client).unwrap(),
+ *  ptr_resolve(name_to_resolve.clone(), resolver).unwrap(),
  *  ResolvedResult {
  *      query: name_to_resolve,
  *      result: Some(Name::from_str_relaxed("one.one.one.one.").unwrap()),
@@ -98,11 +118,8 @@ pub fn get_ptr(
  * );
  * ```
  */
-pub fn ptr_resolve(
-    name: Name,
-    client: SyncClient<TcpClientConnection>,
-) -> Result<ResolvedResult, ResolvingError> {
-    let response: DnsResponse = match client.query(&name, DNSClass::IN, RecordType::PTR) {
+pub fn ptr_resolve(name: Name, resolver: Resolver) -> Result<ResolvedResult, ResolvingError> {
+    let response = match resolver.lookup(name.clone(), RecordType::PTR) {
         Ok(res) => res,
         Err(err) => {
             return Err(ResolvingError {
@@ -111,7 +128,7 @@ pub fn ptr_resolve(
         }
     };
 
-    let answers: &[Record] = response.answers();
+    let answers: &[Record] = response.records();
 
     if answers.len() == 0 {
         return Ok(ResolvedResult {
@@ -134,7 +151,7 @@ pub fn ptr_resolve(
         // 75.7.246.87.in-addr.arpa. 3600	IN	CNAME	75.0-255.7.246.87.in-addr.arpa.
         // 75.0-255.7.246.87.in-addr.arpa.	86400 IN PTR	bulbank.linkbg.com.
         Some(RData::CNAME(res)) => {
-            return ptr_resolve(res.to_lowercase(), client);
+            return ptr_resolve(res.to_lowercase(), resolver);
         }
         Some(res) => {
             return Err(ResolvingError {
@@ -152,28 +169,23 @@ pub fn ptr_resolve(
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::process;
+    use hickory_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
     use std::time::Duration;
 
     #[test]
     fn test_get_ptr() {
-        let server = "8.8.8.8:53".parse().expect("To parse");
-        let conn = match TcpClientConnection::with_timeout(server, Duration::new(5, 0)) {
-            Ok(conn) => conn,
-            Err(err) => {
-                eprintln!(
-                    "Something went wrong with the UDP client connection: {}",
-                    err
-                );
-                process::exit(1);
-            }
-        };
-        let client = SyncClient::new(conn);
+        let server = NameServerConfigGroup::google();
+        let config = ResolverConfig::from_parts(None, vec![], server);
+        let mut options = ResolverOpts::default();
+        options.timeout = Duration::from_secs(5);
+        options.attempts = 1; // One try
+
+        let resolver = Resolver::new(config, options).unwrap();
 
         let query_address = "8.8.8.8".parse().expect("To parse");
 
         assert_eq!(
-            get_ptr(query_address, client).unwrap(),
+            get_ptr(query_address, resolver).unwrap(),
             ResolvedResult {
                 query: Name::from_str_relaxed("8.8.8.8.in-addr.arpa.").unwrap(),
                 result: Some(Name::from_str_relaxed("dns.google.").unwrap()),
@@ -184,23 +196,22 @@ mod test {
 
     #[test]
     fn test_ptr_resolve() {
-        let server = "1.1.1.1:53".parse().expect("To parse");
-        let conn = match TcpClientConnection::with_timeout(server, Duration::new(5, 0)) {
-            Ok(conn) => conn,
-            Err(err) => {
-                eprintln!(
-                    "Something went wrong with the UDP client connection: {}",
-                    err
-                );
-                process::exit(1);
-            }
-        };
-        let client = SyncClient::new(conn);
+        let server = NameServerConfigGroup::from_ips_clear(
+            &[IpAddr::from_str("1.1.1.1").unwrap()],
+            53,
+            true,
+        );
+        let config = ResolverConfig::from_parts(None, vec![], server);
+        let mut options = ResolverOpts::default();
+        options.timeout = Duration::from_secs(5);
+        options.attempts = 1; // One try
+
+        let resolver = Resolver::new(config, options).unwrap();
 
         let name_to_resolve = Name::from_str_relaxed("1.1.1.1.in-addr.arpa.").unwrap();
 
         assert_eq!(
-            ptr_resolve(name_to_resolve.clone(), client).unwrap(),
+            ptr_resolve(name_to_resolve.clone(), resolver).unwrap(),
             ResolvedResult {
                 query: name_to_resolve,
                 result: Some(Name::from_str_relaxed("one.one.one.one.").unwrap()),

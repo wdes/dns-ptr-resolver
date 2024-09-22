@@ -1,8 +1,8 @@
 use std::{env, thread};
 
 use dns_ptr_resolver::get_ptr;
-use hickory_client::client::SyncClient;
-use hickory_client::tcp::TcpClientConnection;
+use hickory_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOpts};
+use hickory_resolver::Resolver;
 use rayon::prelude::*;
 use std::fs::read_to_string;
 use std::net::{IpAddr, SocketAddr};
@@ -75,19 +75,19 @@ fn resolve_file(filename: &str, dns_servers: Vec<&str>) {
     ips.into_par_iter()
         .enumerate()
         .for_each(|(_i, to_resolve)| {
-            let conn =
-                match TcpClientConnection::with_timeout(to_resolve.server, Duration::new(5, 0)) {
-                    Ok(conn) => conn,
-                    Err(err) => {
-                        eprintln!(
-                            "Something went wrong with the UDP client connection: {}",
-                            err
-                        );
-                        process::exit(1);
-                    }
-                };
-            let client = SyncClient::new(conn);
-            let ptr_result = get_ptr(to_resolve.address, client);
+            let server = NameServerConfigGroup::from_ips_clear(
+                &[to_resolve.server.ip()],
+                to_resolve.server.port(),
+                true,
+            );
+
+            let config = ResolverConfig::from_parts(None, vec![], server);
+            let mut options = ResolverOpts::default();
+            options.timeout = Duration::from_secs(5);
+            options.attempts = 1; // One try
+
+            let resolver = Resolver::new(config, options).unwrap();
+            let ptr_result = get_ptr(to_resolve.address, resolver);
             match ptr_result {
                 Ok(ptr) => match ptr.result {
                     Some(res) => println!("{} # {}", to_resolve.address, res),
