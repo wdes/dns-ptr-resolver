@@ -11,17 +11,17 @@ jobs:
     name: Build and test binary
     steps:
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
       - name: Cache cargo index
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cargo/git
           key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
       - name: Cache cargo build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
@@ -31,7 +31,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.67
+          toolchain: 1.70
           override: true
       - name: Build
         uses: actions-rs/cargo@v1
@@ -43,3 +43,8 @@ jobs:
         with:
           command: test
           args: --release
+      - name: Test the example file
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --release ./example/ips-to-resolve.txt
